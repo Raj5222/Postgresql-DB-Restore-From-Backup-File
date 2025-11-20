@@ -1,7 +1,7 @@
-# 🚀 PostgreSQL DB Restore — Smart Surgical Restore Script
+# 🚀 PostgreSQL DB Restore — Selected Data Restore Script
 ### 🤙📖 What's the Vibe?
 
-This script performs a **Surgical Restore** of your PostgreSQL data from a backup `.dump` file directly into a live database.
+This script performs a **Restore** of your PostgreSQL data from a backup `.dump` file directly into a live database.
 
 Unlike those boring scripts that blindly overwrite everything, this tool lets you:
 
