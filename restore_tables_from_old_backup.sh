@@ -16,8 +16,8 @@ BACKUP_FILE="/home/ubuntu/sandbox-db.dump"
 
 # --- Target Tables Configuration ---
 TARGETS=(
-    "custom_module_data : customer_id : 571"
-    "custom_module_equipment_map : FULL"
+    "custom_module_data : customer_id : 708"
+    "custom_module_equipment_map : cm_id : 1710,1709,1708,1707,1706,1705,1704,1703"
 )
 
 SCHEMA="public"
@@ -58,20 +58,20 @@ COMMIT_SUCCESS="false"
 
 cleanup_handler() {
     if [ "$COMMIT_SUCCESS" == "true" ]; then return; fi
-    echo -e "\n${RED}[!!!] INTERRUPTION OR ERROR DETECTED [!!!]${NC}"
-    echo -e "${YELLOW}      Transaction Status: ROLLED BACK (Automatic)${NC}"
-    echo -e "${YELLOW}      Cleaning up temporary tables...${NC}"
+    echo -e "\n${RED}[ERROR] Process interrupted or failed${NC}"
+    echo -e "${YELLOW}      Transaction automatically rolled back${NC}"
+    echo -e "${YELLOW}      Removing temporary tables...${NC}"
     for TMP in "${GLOBAL_TEMP_TABLES[@]}"; do
         if [[ -n "$TMP" ]]; then
             PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -q -c "DROP TABLE IF EXISTS ${SCHEMA}.${TMP};" >/dev/null 2>&1
         fi
     done
-    echo -e "${RED}[FAIL] Operation Cancelled.${NC}"
+    echo -e "${RED}[FAIL] Operation cancelled${NC}"
 }
 trap cleanup_handler EXIT INT TERM
 
 clear
-log_header "RESTORE OPERATION INITIALIZED"
+log_header "RESTORE OPERATION STARTED"
 
 # Tools
 for tool in psql pg_restore sed awk grep; do
@@ -79,18 +79,18 @@ for tool in psql pg_restore sed awk grep; do
 done
 
 # File
-if [[ ! -f "$BACKUP_FILE" ]]; then log_error "Backup file missing. $BACKUP_FILE"; fi 
-log_success "Backup file Exist $BACKUP_FILE"
+if [[ ! -f "$BACKUP_FILE" ]]; then log_error "Backup file not found: $BACKUP_FILE"; fi 
+log_success "Backup file found: $BACKUP_FILE"
 
 # Connection
-log_info "Verifying Connection..."
+log_info "Checking database connection..."
 if ! exec_silent psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1" >/dev/null; then
-    log_error "Connection failed."
+    log_error "Failed to connect to database."
 fi
-log_success "Connected to ${DB_NAME}."
+log_success "Database connection successful: ${DB_NAME}"
 
 
-log_header "PHASE 1: COPY DATA"
+log_header "PHASE 1: EXTRACTING DATA FROM BACKUP"
 
 declare -a ARR_TABLES
 declare -a ARR_TEMP_TABLES
@@ -120,7 +120,7 @@ for config in "${TARGETS[@]}"; do
     ")
     
     if [[ -z "$PK_COL" ]]; then
-        log_warn "No Primary Key found for $CUR_TABLE. Falling back to 'id'."
+        log_warn "Primary key not found for $CUR_TABLE. Using 'id' as fallback."
         PK_COL="id"
     fi
 
@@ -142,14 +142,14 @@ for config in "${TARGETS[@]}"; do
     log_info "${BOLD}${CUR_TABLE}${NC} [${MODE}] (PK: $PK_COL)"
     
     # Create Temp
-    log_process "  -> Creating temporary Table: ${TEMP_TABLE}"
+    log_process "Creating temporary table: ${TEMP_TABLE}"
     exec_silent psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -q -c "
         DROP TABLE IF EXISTS ${SCHEMA}.${TEMP_TABLE};
         CREATE TABLE ${SCHEMA}.${TEMP_TABLE} (LIKE ${SCHEMA}.${CUR_TABLE} INCLUDING DEFAULTS);
     "
 
     # Load Data
-    log_process "  -> Loading from Backup..."
+    log_process "Loading data from backup..."
     (
         pg_restore -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" --data-only -f - -t "$CUR_TABLE" "$BACKUP_FILE" | \
         sed -E "s/COPY ([\"]?${SCHEMA}[\"]?\.)?[\"]?${CUR_TABLE}[\"]? /COPY ${SCHEMA}.${TEMP_TABLE} /" | \
@@ -166,9 +166,9 @@ for config in "${TARGETS[@]}"; do
     COUNT=$(exec_silent psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -A -c "$VAL_SQL")
 
     if [[ -z "$COUNT" || "$COUNT" -eq 0 ]]; then
-        log_error "0 rows found in backup for ${CUR_TABLE}."
+        log_error "No matching rows found in backup for ${CUR_TABLE}."
     fi
-    log_success "  -> Stored ${COUNT} rows."
+    log_success "Loaded ${COUNT} rows successfully."
 
     # Store in Arrays for Phase 2
     ARR_TABLES+=("$CUR_TABLE")
@@ -180,8 +180,8 @@ for config in "${TARGETS[@]}"; do
 done
 
 
-log_header "PHASE 2: DATA SWAP WITH TRANSACTION"
-log_info "Preparing Transaction..."
+log_header "PHASE 2: APPLYING DATA TO DATABASE"
+log_info "Preparing transaction..."
 
 SQL_BLOCK=""
 ID_SQL=""
@@ -244,7 +244,7 @@ for (( i=0; i<$LEN; i++ )); do
     "
 done
 
-log_process "Executing Transaction..."
+log_process "Executing transaction..."
 
 # Run psql
 RESULT=$(exec_silent psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -A -q <<EOF
@@ -277,20 +277,20 @@ if [ $? -ne 0 ]; then
 fi
 
 COMMIT_SUCCESS="true"
-log_success "COMMIT SUCCESSFUL."
+log_success "Transaction committed successfully."
 
 
-log_header "PHASE 3: CLEANUP & REPORT"
+log_header "PHASE 3: CLEANUP AND FINAL REPORT"
 
 for TMP in "${GLOBAL_TEMP_TABLES[@]}"; do
-    log_process "  -> Delete Temporary Table: ${TMP}"
+    log_process "Removing temporary table: ${TMP}"
     exec_silent psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -q -c "DROP TABLE IF EXISTS ${SCHEMA}.${TMP};"
 done
-log_success "Temporary tables removed."
+log_success "Temporary tables cleaned up."
 
 echo ""
 echo -e "${CYAN}==============================================================================${NC}"
-echo -e "${BOLD}                       FINAL SUMMARY REPORT                                   ${NC}"
+echo -e "${BOLD}                       RESTORE SUMMARY                                   ${NC}"
 echo -e "${CYAN}==============================================================================${NC}"
 printf "%-30s | %-10s | %-10s | %s\n" "TABLE NAME" "OLD" "NEW" "NET CHANGE"
 echo "------------------------------------------------------------------------------"
