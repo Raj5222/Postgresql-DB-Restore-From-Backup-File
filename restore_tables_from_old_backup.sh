@@ -12,12 +12,12 @@ DB_USER="postgres"
 DB_PASS="0206" 
 
 # --- Backup Source ---
-BACKUP_FILE="/home/terotam/Downloads/terotam-sandbox-2025-11-19.dump"
+BACKUP_FILE="/home/ubuntu/sandbox-db.dump"
 
 # --- Target Tables Configuration ---
 TARGETS=(
-    "custom_module_data : customer_id : 1441"
-    # "custom_module_equipment_map : FULL"
+    "custom_module_data : customer_id : 571"
+    "custom_module_equipment_map : FULL"
 )
 
 SCHEMA="public"
@@ -250,6 +250,10 @@ log_process "Executing Transaction..."
 RESULT=$(exec_silent psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -A -q <<EOF
 \set ON_ERROR_STOP on
 BEGIN;
+
+SET statement_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+
 $CON_SQL
 
 DO \$$
